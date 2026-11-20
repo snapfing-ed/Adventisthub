@@ -1,0 +1,21 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/about/page": "/about",
+  "/admin-portal/page": "/admin-portal",
+  "/admin/page": "/admin",
+  "/contact/page": "/contact",
+  "/dashboard/page": "/dashboard",
+  "/events/page": "/events",
+  "/favicon.ico/route": "/favicon.ico",
+  "/groups/page": "/groups",
+  "/heroes/page": "/heroes",
+  "/journals/page": "/journals",
+  "/login/page": "/login",
+  "/media/page": "/media",
+  "/page": "/",
+  "/prayer/page": "/prayer",
+  "/register/page": "/register",
+  "/reset-password/page": "/reset-password",
+  "/resources/page": "/resources"
+}

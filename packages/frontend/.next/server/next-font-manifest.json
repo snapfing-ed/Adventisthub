@@ -1,0 +1,75 @@
+{
+  "app": {
+    "[project]/projects/mu_pcm/packages/frontend/src/app/_not-found/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/about/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/admin-portal/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/admin/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/contact/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/dashboard/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/events/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/groups/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/heroes/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/journals/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/login/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/media/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/prayer/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/register/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/reset-password/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ],
+    "[project]/projects/mu_pcm/packages/frontend/src/app/resources/page": [
+      "static/media/2a65768255d6b625-s.p.d19752fb.woff2",
+      "static/media/dc6d2a64e9dbf3bc-s.p.4b9eb7a1.woff2"
+    ]
+  },
+  "appUsingSizeAdjust": true,
+  "pages": {},
+  "pagesUsingSizeAdjust": false
+}
