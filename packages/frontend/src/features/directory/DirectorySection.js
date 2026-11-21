@@ -22,7 +22,23 @@ const STATUS_BADGE = {
   DECEASED: 'bg-slate-200 text-slate-700 border-slate-300',
 };
 
-const emptyPersonForm = (isPcm) => ({
+const ACADEMIC_STATUS_LABELS = {
+  FRESHMAN_INTAKE: 'Freshman Intake',
+  ACTIVE_STUDENT: 'Active Student',
+  STUDENT_LEADER: 'Student Leader',
+  FINAL_YEAR: 'Final Year',
+  ALUMNI_TRANSITIONED: 'Alumni Transitioned',
+};
+
+const ACADEMIC_STATUS_BADGE = {
+  FRESHMAN_INTAKE: 'bg-sky-50 text-sky-800 border-sky-200',
+  ACTIVE_STUDENT: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  STUDENT_LEADER: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+  FINAL_YEAR: 'bg-amber-50 text-amber-800 border-amber-200',
+  ALUMNI_TRANSITIONED: 'bg-slate-100 text-slate-700 border-slate-200',
+};
+
+const emptyPersonForm = (isPcm, defaultInstitution = '') => ({
   firstName: '',
   lastName: '',
   gender: '',
@@ -41,11 +57,23 @@ const emptyPersonForm = (isPcm) => ({
   homeChurch: '',
   householdId: '',
   notes: '',
+  // PCM Enrichment fields
+  academicInstitution: defaultInstitution,
+  academicStatus: 'ACTIVE_STUDENT',
+  campusFaculty: '',
+  graduationYear: '',
+  facultyAdvisorName: '',
+  facultyAdvisorContact: '',
+  emergencyContact: '',
+  spiritualGifts: '',
+  baptismalInterest: false,
+  mentorEligible: false,
 });
 
 export default function DirectorySection({ activeTenant }) {
   const isPcm = activeTenant?.organization_type === 'PCM_CHAPTER';
   const isVerified = activeTenant?.verification_status === 'VERIFIED';
+  const defaultCampus = activeTenant?.city_or_campus || '';
 
   const allowedStatuses = isPcm
     ? ['STUDENT_MEMBER', 'VISITOR', 'TRANSFERRED_OUT', 'REMOVED', 'DECEASED']
@@ -57,10 +85,12 @@ export default function DirectorySection({ activeTenant }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [householdFilter, setHouseholdFilter] = useState('');
+  const [academicStatusFilter, setAcademicStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
 
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [showAddHousehold, setShowAddHousehold] = useState(false);
+  const [showTransitionForm, setShowTransitionForm] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvText, setCsvText] = useState('');
   const [importing, setImporting] = useState(false);
@@ -68,40 +98,82 @@ export default function DirectorySection({ activeTenant }) {
   const [editingId, setEditingId] = useState(null);
   const [feedback, setFeedback] = useState('');
 
-  const [personForm, setPersonForm] = useState(() => emptyPersonForm(isPcm));
+  const [personForm, setPersonForm] = useState(() => emptyPersonForm(isPcm, defaultCampus));
   const [householdForm, setHouseholdForm] = useState({
     householdName: '',
     primaryPhone: '',
     address: '',
   });
+  const [transitionForm, setTransitionForm] = useState({
+    fromStatus: 'FINAL_YEAR',
+    toStatus: 'ALUMNI_TRANSITIONED',
+    graduationYear: String(new Date().getFullYear()),
+  });
 
   useEffect(() => {
     if (!editingId) {
-      setPersonForm(emptyPersonForm(isPcm));
+      setPersonForm(emptyPersonForm(isPcm, defaultCampus));
     }
-  }, [isPcm, editingId]);
+  }, [isPcm, defaultCampus, editingId]);
 
   const loadDirectory = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (query.trim()) params.set('q', query.trim());
     if (statusFilter) params.set('status', statusFilter);
-    if (householdFilter) params.set('householdId', householdFilter);
+    if (!isPcm && householdFilter) params.set('householdId', householdFilter);
 
-    const [pRes, hRes] = await Promise.all([
+    const requests = [
       apiFetch(`/api/persons?${params.toString()}`),
-      apiFetch('/api/households'),
-    ]);
+      isPcm ? apiFetch('/api/pcm/profiles') : apiFetch('/api/households'),
+    ];
 
+    const [pRes, secondaryRes] = await Promise.all(requests);
+
+    let basePersons = pRes.ok ? pRes.data.persons || [] : [];
     if (pRes.ok) {
-      setPersons(pRes.data.persons || []);
       setCounts(pRes.data.counts || []);
     }
-    if (hRes.ok) {
-      setHouseholds(hRes.data.households || []);
+
+    if (isPcm) {
+      const pcmMap = new Map();
+      if (secondaryRes.ok) {
+        for (const prof of secondaryRes.data.profiles || []) {
+          pcmMap.set(prof.person_id, prof);
+        }
+      }
+      let merged = basePersons.map((p) => {
+        const prof = pcmMap.get(p.id);
+        return {
+          ...p,
+          pcm_profile_id: prof?.pcm_profile_id || null,
+          academic_institution: prof?.academic_institution || defaultCampus,
+          academic_status: prof?.academic_status || 'ACTIVE_STUDENT',
+          campus_faculty: prof?.campus_faculty || '',
+          graduation_year: prof?.graduation_year || '',
+          faculty_advisor_name: prof?.faculty_advisor_name || '',
+          faculty_advisor_contact: prof?.faculty_advisor_contact || '',
+          emergency_contact: prof?.emergency_contact || '',
+          spiritual_gifts: prof?.spiritual_gifts || '',
+          baptismal_interest: Boolean(prof?.baptismal_interest),
+          mentor_eligible: Boolean(prof?.mentor_eligible),
+        };
+      });
+
+      if (academicStatusFilter) {
+        merged = merged.filter((p) => p.academic_status === academicStatusFilter);
+      }
+      setPersons(merged);
+      setHouseholds([]);
+    } else {
+      setPersons(basePersons);
+      if (secondaryRes.ok) {
+        setHouseholds(secondaryRes.data.households || []);
+      }
     }
+
     setLoading(false);
-  }, [query, statusFilter, householdFilter]);
+  }, [query, statusFilter, householdFilter, academicStatusFilter, isPcm, defaultCampus]);
 
   useEffect(() => {
     loadDirectory();
@@ -111,6 +183,7 @@ export default function DirectorySection({ activeTenant }) {
     setEditingId(p.id);
     setShowAddPerson(true);
     setShowAddHousehold(false);
+    setShowTransitionForm(false);
     setShowCsvImport(false);
     setPersonForm({
       firstName: p.first_name || '',
@@ -131,6 +204,16 @@ export default function DirectorySection({ activeTenant }) {
       homeChurch: p.home_church || '',
       householdId: p.household_id || '',
       notes: p.notes || '',
+      academicInstitution: p.academic_institution || defaultCampus,
+      academicStatus: p.academic_status || 'ACTIVE_STUDENT',
+      campusFaculty: p.campus_faculty || '',
+      graduationYear: p.graduation_year ? String(p.graduation_year) : '',
+      facultyAdvisorName: p.faculty_advisor_name || '',
+      facultyAdvisorContact: p.faculty_advisor_contact || '',
+      emergencyContact: p.emergency_contact || '',
+      spiritualGifts: p.spiritual_gifts || '',
+      baptismalInterest: Boolean(p.baptismal_interest),
+      mentorEligible: Boolean(p.mentor_eligible),
     });
   };
 
@@ -140,21 +223,57 @@ export default function DirectorySection({ activeTenant }) {
     const url = editingId ? `/api/persons/${editingId}` : '/api/persons';
     const method = editingId ? 'PATCH' : 'POST';
 
+    const payload = { ...personForm };
+    if (isPcm) {
+      payload.householdId = '';
+    }
+
     const res = await apiFetch(url, {
       method,
-      body: JSON.stringify(personForm),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       setFeedback(res.error);
       return;
     }
+
+    const savedPersonId = editingId || res.data?.person?.id || res.data?.id;
+
+    // Save PCM academic & spiritual enrichment profile in the same flow
+    if (isPcm && savedPersonId) {
+      const pcmRes = await apiFetch(`/api/pcm/profiles/${savedPersonId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          academicInstitution: personForm.academicInstitution || defaultCampus,
+          academicStatus: personForm.academicStatus || 'ACTIVE_STUDENT',
+          campusFaculty: personForm.campusFaculty,
+          programOfStudy: personForm.programOfStudy,
+          studentNumber: personForm.studentId,
+          yearOfStudy: personForm.yearOfStudy,
+          graduationYear: personForm.graduationYear,
+          facultyAdvisorName: personForm.facultyAdvisorName,
+          facultyAdvisorContact: personForm.facultyAdvisorContact,
+          baptismalInterest: Boolean(personForm.baptismalInterest),
+          spiritualGifts: personForm.spiritualGifts,
+          emergencyContact: personForm.emergencyContact,
+          mentorEligible: Boolean(personForm.mentorEligible),
+          notes: personForm.notes,
+        }),
+      });
+      if (!pcmRes.ok) {
+        setFeedback(`Student saved, but PCM enrichment warning: ${pcmRes.error}`);
+        await loadDirectory();
+        return;
+      }
+    }
+
     setShowAddPerson(false);
     setEditingId(null);
-    setPersonForm(emptyPersonForm(isPcm));
+    setPersonForm(emptyPersonForm(isPcm, defaultCampus));
     setFeedback(
       editingId
-        ? `${isPcm ? 'Student' : 'Member'} record updated.`
-        : `${isPcm ? 'Student' : 'Member'} added to directory.`
+        ? `${isPcm ? 'Student record & PCM profile' : 'Member record'} updated.`
+        : `${isPcm ? 'Student & PCM profile' : 'Member'} added to directory.`
     );
     await loadDirectory();
   };
@@ -173,6 +292,24 @@ export default function DirectorySection({ activeTenant }) {
     setShowAddHousehold(false);
     setHouseholdForm({ householdName: '', primaryPhone: '', address: '' });
     setFeedback('Household group created.');
+    await loadDirectory();
+  };
+
+  const handleSemesterTransition = async (e) => {
+    e.preventDefault();
+    setFeedback('');
+    const res = await apiFetch('/api/pcm/profiles/semester-transition', {
+      method: 'POST',
+      body: JSON.stringify(transitionForm),
+    });
+    if (!res.ok) {
+      setFeedback(res.error);
+      return;
+    }
+    setShowTransitionForm(false);
+    setFeedback(
+      `Semester transition completed: ${res.data.updatedCount} student profile(s) updated.`
+    );
     await loadDirectory();
   };
 
@@ -225,7 +362,7 @@ export default function DirectorySection({ activeTenant }) {
     const params = new URLSearchParams();
     if (query.trim()) params.set('q', query.trim());
     if (statusFilter) params.set('status', statusFilter);
-    if (householdFilter) params.set('householdId', householdFilter);
+    if (!isPcm && householdFilter) params.set('householdId', householdFilter);
 
     const headers = {};
     if (typeof window !== 'undefined') {
@@ -275,11 +412,11 @@ export default function DirectorySection({ activeTenant }) {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              {isPcm ? 'Campus Student & Member Directory' : 'Congregation & Membership Roll'}
+              {isPcm ? 'Campus Student Directory & Lifecycle Profiles' : 'Congregation & Membership Roll'}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {isPcm
-                ? 'Manage campus students, visiting Adventists, and home church connections.'
+                ? 'Manage campus students, academic lifecycle stages, mentor eligibility, and home church connections.'
                 : 'Church Manual congregant directory, baptismal records, and optional family households.'}
             </p>
           </div>
@@ -298,6 +435,7 @@ export default function DirectorySection({ activeTenant }) {
               onClick={() => {
                 setShowCsvImport((v) => !v);
                 setShowAddHousehold(false);
+                setShowTransitionForm(false);
                 setShowAddPerson(false);
                 setEditingId(null);
               }}
@@ -305,19 +443,37 @@ export default function DirectorySection({ activeTenant }) {
             >
               Import CSV
             </button>
-            <button
-              type="button"
-              disabled={!isVerified}
-              onClick={() => {
-                setShowAddHousehold((v) => !v);
-                setShowAddPerson(false);
-                setShowCsvImport(false);
-                setEditingId(null);
-              }}
-              className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              + Household
-            </button>
+
+            {isPcm ? (
+              <button
+                type="button"
+                disabled={!isVerified}
+                onClick={() => {
+                  setShowTransitionForm((v) => !v);
+                  setShowAddPerson(false);
+                  setShowCsvImport(false);
+                  setEditingId(null);
+                }}
+                className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Semester Transition
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!isVerified}
+                onClick={() => {
+                  setShowAddHousehold((v) => !v);
+                  setShowAddPerson(false);
+                  setShowCsvImport(false);
+                  setEditingId(null);
+                }}
+                className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                + Household
+              </button>
+            )}
+
             <button
               type="button"
               disabled={!isVerified}
@@ -325,18 +481,19 @@ export default function DirectorySection({ activeTenant }) {
                 if (showAddPerson) {
                   setShowAddPerson(false);
                   setEditingId(null);
-                  setPersonForm(emptyPersonForm(isPcm));
+                  setPersonForm(emptyPersonForm(isPcm, defaultCampus));
                 } else {
                   setEditingId(null);
-                  setPersonForm(emptyPersonForm(isPcm));
+                  setPersonForm(emptyPersonForm(isPcm, defaultCampus));
                   setShowAddPerson(true);
                   setShowAddHousehold(false);
+                  setShowTransitionForm(false);
                   setShowCsvImport(false);
                 }
               }}
               className="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-medium disabled:opacity-50"
             >
-              + Add {isPcm ? 'Student / Member' : 'Person'}
+              + Add {isPcm ? 'Student' : 'Person'}
             </button>
           </div>
         </div>
@@ -345,6 +502,74 @@ export default function DirectorySection({ activeTenant }) {
           <div className="mt-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800">
             {feedback}
           </div>
+        )}
+
+        {/* Batch Semester / Graduation Transition Drawer (PCM Only) */}
+        {isPcm && showTransitionForm && (
+          <form
+            onSubmit={handleSemesterTransition}
+            className="mt-5 p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-3"
+          >
+            <div className="text-xs font-bold text-amber-950">
+              Batch Semester / Graduation Lifecycle Promotion
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">From Stage</label>
+                <select
+                  value={transitionForm.fromStatus}
+                  onChange={(e) =>
+                    setTransitionForm((p) => ({ ...p, fromStatus: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                >
+                  {Object.entries(ACADEMIC_STATUS_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">Promote To Stage</label>
+                <select
+                  value={transitionForm.toStatus}
+                  onChange={(e) =>
+                    setTransitionForm((p) => ({ ...p, toStatus: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                >
+                  {Object.entries(ACADEMIC_STATUS_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">
+                  Filter Graduation Year (Optional)
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g., 2026"
+                  value={transitionForm.graduationYear}
+                  onChange={(e) =>
+                    setTransitionForm((p) => ({ ...p, graduationYear: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  className="w-full px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800"
+                >
+                  Run Batch Transition
+                </button>
+              </div>
+            </div>
+          </form>
         )}
 
         {/* Bulk CSV Import Drawer */}
@@ -398,8 +623,8 @@ export default function DirectorySection({ activeTenant }) {
           </form>
         )}
 
-        {/* Optional Household Creation Drawer */}
-        {showAddHousehold && (
+        {/* Optional Household Creation Drawer (Local Church Only) */}
+        {!isPcm && showAddHousehold && (
           <form
             onSubmit={handleCreateHousehold}
             className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3"
@@ -434,17 +659,18 @@ export default function DirectorySection({ activeTenant }) {
           </form>
         )}
 
-        {/* Add / Edit Person or Student Form */}
+        {/* Add / Edit Person or Student + PCM Enrichment Form */}
         {showAddPerson && (
           <form
             onSubmit={handleSavePerson}
-            className="mt-5 p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-4"
+            className="mt-5 p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-5"
           >
             <div className="text-xs font-bold text-slate-800">
               {editingId
-                ? `Edit ${isPcm ? 'Student / Member' : 'Person'} Record`
-                : `New ${isPcm ? 'Student / Member' : 'Person'} Record`}
+                ? `Edit ${isPcm ? 'Student & PCM Lifecycle' : 'Person'} Record`
+                : `New ${isPcm ? 'Student & PCM Lifecycle' : 'Person'} Record`}
             </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <input
                 required
@@ -513,49 +739,29 @@ export default function DirectorySection({ activeTenant }) {
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 self-end"
               />
 
-              <select
-                value={personForm.householdId}
-                onChange={(e) => setPersonForm((p) => ({ ...p, householdId: e.target.value }))}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 self-end"
-              >
-                <option value="">No Household Group (Optional)</option>
-                {households.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.household_name}
-                  </option>
-                ))}
-              </select>
-
               {isPcm ? (
-                <>
-                  <input
-                    placeholder="Student ID"
-                    value={personForm.studentId}
-                    onChange={(e) => setPersonForm((p) => ({ ...p, studentId: e.target.value }))}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
-                  />
-                  <input
-                    placeholder="Program of Study (e.g., BSc Computer Science)"
-                    value={personForm.programOfStudy}
-                    onChange={(e) => setPersonForm((p) => ({ ...p, programOfStudy: e.target.value }))}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
-                  />
-                  <input
-                    placeholder="Year & Hostel (e.g., Year 4 • Zambezi)"
-                    value={personForm.hostelOrResidence}
-                    onChange={(e) =>
-                      setPersonForm((p) => ({ ...p, hostelOrResidence: e.target.value }))
-                    }
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
-                  />
-                  <input
-                    placeholder="Home Church"
-                    value={personForm.homeChurch}
-                    onChange={(e) => setPersonForm((p) => ({ ...p, homeChurch: e.target.value }))}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
-                  />
-                </>
+                <input
+                  placeholder="Home Church"
+                  value={personForm.homeChurch}
+                  onChange={(e) => setPersonForm((p) => ({ ...p, homeChurch: e.target.value }))}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 self-end"
+                />
               ) : (
+                <select
+                  value={personForm.householdId}
+                  onChange={(e) => setPersonForm((p) => ({ ...p, householdId: e.target.value }))}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 self-end"
+                >
+                  <option value="">No Household Group (Optional)</option>
+                  {households.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.household_name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {!isPcm && (
                 <>
                   <input
                     placeholder="Sabbath School Class / Action Unit"
@@ -575,13 +781,208 @@ export default function DirectorySection({ activeTenant }) {
               )}
             </div>
 
+            {/* Integrated Campus Academic & Discipleship Enrichment (PCM Only) */}
+            {isPcm && (
+              <div className="pt-4 border-t border-slate-200 space-y-3">
+                <div className="text-xs font-bold text-blue-900">
+                  Campus Academic &amp; Discipleship Enrichment
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Campus Lifecycle Stage
+                    </label>
+                    <select
+                      value={personForm.academicStatus}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, academicStatus: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    >
+                      {Object.entries(ACADEMIC_STATUS_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Academic Institution / Campus
+                    </label>
+                    <input
+                      placeholder="e.g., Mulungushi University"
+                      value={personForm.academicInstitution}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, academicInstitution: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Faculty / School
+                    </label>
+                    <input
+                      placeholder="e.g., School of Science & Technology"
+                      value={personForm.campusFaculty}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, campusFaculty: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Program of Study
+                    </label>
+                    <input
+                      placeholder="e.g., BSc Computer Science"
+                      value={personForm.programOfStudy}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, programOfStudy: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Student ID Number
+                    </label>
+                    <input
+                      placeholder="e.g., 202401928"
+                      value={personForm.studentId}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, studentId: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-600 mb-1">Study Year</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        placeholder="1–6"
+                        value={personForm.yearOfStudy}
+                        onChange={(e) =>
+                          setPersonForm((p) => ({ ...p, yearOfStudy: e.target.value }))
+                        }
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 mb-1">Grad Year</label>
+                      <input
+                        type="number"
+                        min={2000}
+                        max={2050}
+                        placeholder="2027"
+                        value={personForm.graduationYear}
+                        onChange={(e) =>
+                          setPersonForm((p) => ({ ...p, graduationYear: e.target.value }))
+                        }
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Hostel / Campus Residence
+                    </label>
+                    <input
+                      placeholder="e.g., Zambezi Hostel"
+                      value={personForm.hostelOrResidence}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, hostelOrResidence: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Faculty Advisor / Chaplain
+                    </label>
+                    <input
+                      placeholder="e.g., Dr. M. Phiri"
+                      value={personForm.facultyAdvisorName}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, facultyAdvisorName: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Emergency Contact
+                    </label>
+                    <input
+                      placeholder="Parent/Guardian name & phone"
+                      value={personForm.emergencyContact}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, emergencyContact: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Spiritual Gifts &amp; Ministry Interests
+                    </label>
+                    <input
+                      placeholder="e.g., Music/Choir, Personal Evangelism, Literature, Hospitality"
+                      value={personForm.spiritualGifts}
+                      onChange={(e) =>
+                        setPersonForm((p) => ({ ...p, spiritualGifts: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div className="flex flex-col justify-center gap-2 pt-2">
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={personForm.baptismalInterest}
+                        onChange={(e) =>
+                          setPersonForm((p) => ({ ...p, baptismalInterest: e.target.checked }))
+                        }
+                      />
+                      Baptismal / Bible Study Interest
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={personForm.mentorEligible}
+                        onChange={(e) =>
+                          setPersonForm((p) => ({ ...p, mentorEligible: e.target.checked }))
+                        }
+                      />
+                      Approved Peer / Alumni / Faculty Mentor
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setShowAddPerson(false);
                   setEditingId(null);
-                  setPersonForm(emptyPersonForm(isPcm));
+                  setPersonForm(emptyPersonForm(isPcm, defaultCampus));
                 }}
                 className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-medium text-slate-700"
               >
@@ -622,18 +1023,34 @@ export default function DirectorySection({ activeTenant }) {
               </option>
             ))}
           </select>
-          <select
-            value={householdFilter}
-            onChange={(e) => setHouseholdFilter(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900"
-          >
-            <option value="">All Households</option>
-            {households.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.household_name} ({h.member_count})
-              </option>
-            ))}
-          </select>
+
+          {isPcm ? (
+            <select
+              value={academicStatusFilter}
+              onChange={(e) => setAcademicStatusFilter(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900"
+            >
+              <option value="">All Campus Stages</option>
+              {Object.entries(ACADEMIC_STATUS_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={householdFilter}
+              onChange={(e) => setHouseholdFilter(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900"
+            >
+              <option value="">All Households</option>
+              {households.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.household_name} ({h.member_count})
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Directory List: Mobile Cards (< md) + Desktop Table (>= md) */}
@@ -641,7 +1058,7 @@ export default function DirectorySection({ activeTenant }) {
           <p className="text-xs text-slate-500 mt-6">Loading directory...</p>
         ) : persons.length === 0 ? (
           <div className="text-center py-10 text-xs text-slate-500">
-            No records found. Click <strong>+ Add {isPcm ? 'Student / Member' : 'Person'}</strong> or{' '}
+            No records found. Click <strong>+ Add {isPcm ? 'Student' : 'Person'}</strong> or{' '}
             <strong>Import CSV</strong> to populate your roll.
           </div>
         ) : (
@@ -661,18 +1078,41 @@ export default function DirectorySection({ activeTenant }) {
                     </div>
                     <span
                       className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
-                        STATUS_BADGE[p.membership_status] || 'bg-slate-100 text-slate-700'
+                        isPcm
+                          ? ACADEMIC_STATUS_BADGE[p.academic_status]
+                          : STATUS_BADGE[p.membership_status] || 'bg-slate-100 text-slate-700'
                       }`}
                     >
-                      {STATUS_LABELS[p.membership_status] || p.membership_status}
+                      {isPcm
+                        ? ACADEMIC_STATUS_LABELS[p.academic_status]
+                        : STATUS_LABELS[p.membership_status] || p.membership_status}
                     </span>
                   </div>
                   <div className="text-xs text-slate-600 space-y-0.5">
                     {p.phone && <div>Phone: {p.phone}</div>}
                     {p.email && <div>Email: {p.email}</div>}
-                    {isPcm && p.program_of_study && <div>Program: {p.program_of_study}</div>}
-                    {p.household_name && <div>Household: {p.household_name}</div>}
+                    {isPcm && p.program_of_study && (
+                      <div>
+                        Program: {p.program_of_study}
+                        {p.graduation_year ? ` • Class of ${p.graduation_year}` : ''}
+                      </div>
+                    )}
+                    {!isPcm && p.household_name && <div>Household: {p.household_name}</div>}
                   </div>
+                  {isPcm && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {p.baptismal_interest && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Baptism Interest
+                        </span>
+                      )}
+                      {p.mentor_eligible && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                          Mentor Eligible
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {isVerified && (
                     <div className="pt-1">
                       <button
@@ -680,7 +1120,7 @@ export default function DirectorySection({ activeTenant }) {
                         onClick={() => startEdit(p)}
                         className="text-xs font-medium text-blue-700 hover:underline"
                       >
-                        Edit Record
+                        {isPcm ? 'Edit / Enrich Profile' : 'Edit Record'}
                       </button>
                     </div>
                   )}
@@ -694,9 +1134,9 @@ export default function DirectorySection({ activeTenant }) {
                 <thead className="border-b border-slate-200 text-slate-500">
                   <tr>
                     <th className="py-2.5 pr-4">Name</th>
-                    <th className="py-2.5 pr-4">Status</th>
+                    <th className="py-2.5 pr-4">{isPcm ? 'Campus Stage & Readiness' : 'Status'}</th>
                     <th className="py-2.5 pr-4">Contact</th>
-                    <th className="py-2.5 pr-4">{isPcm ? 'Academic / Home Church' : 'Household / Class'}</th>
+                    <th className="py-2.5 pr-4">{isPcm ? 'Academic & Home Church' : 'Household / Class'}</th>
                     <th className="py-2.5 pr-4">Baptism</th>
                     <th className="py-2.5 text-right">Action</th>
                   </tr>
@@ -708,25 +1148,60 @@ export default function DirectorySection({ activeTenant }) {
                         <div className="font-semibold text-slate-900">
                           {p.first_name} {p.last_name}
                         </div>
-                        {p.student_id && <div className="text-slate-500">{p.student_id}</div>}
+                        {p.student_id && <div className="text-slate-500">#{p.student_id}</div>}
                       </td>
-                      <td className="py-3 pr-4">
-                        <span
-                          className={`inline-block font-medium px-2.5 py-0.5 rounded-full border ${
-                            STATUS_BADGE[p.membership_status] || 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {STATUS_LABELS[p.membership_status] || p.membership_status}
-                        </span>
+                      <td className="py-3 pr-4 space-y-1">
+                        {isPcm ? (
+                          <>
+                            <span
+                              className={`inline-block font-medium px-2.5 py-0.5 rounded-full border ${
+                                ACADEMIC_STATUS_BADGE[p.academic_status]
+                              }`}
+                            >
+                              {ACADEMIC_STATUS_LABELS[p.academic_status]}
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {p.baptismal_interest && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Baptism Interest
+                                </span>
+                              )}
+                              {p.mentor_eligible && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                  Mentor
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <span
+                            className={`inline-block font-medium px-2.5 py-0.5 rounded-full border ${
+                              STATUS_BADGE[p.membership_status] || 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {STATUS_LABELS[p.membership_status] || p.membership_status}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 pr-4 text-slate-600">
                         <div>{p.phone || '—'}</div>
                         <div className="text-slate-400">{p.email || ''}</div>
                       </td>
                       <td className="py-3 pr-4 text-slate-600">
-                        {isPcm
-                          ? [p.program_of_study, p.home_church].filter(Boolean).join(' • ') || '—'
-                          : [p.household_name, p.sabbath_school_class].filter(Boolean).join(' • ') || '—'}
+                        {isPcm ? (
+                          <div>
+                            <div className="font-medium text-slate-800">
+                              {[p.program_of_study, p.graduation_year ? `Class of ${p.graduation_year}` : '']
+                                .filter(Boolean)
+                                .join(' • ') || '—'}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {[p.campus_faculty, p.home_church].filter(Boolean).join(' • ')}
+                            </div>
+                          </div>
+                        ) : (
+                          [p.household_name, p.sabbath_school_class].filter(Boolean).join(' • ') || '—'
+                        )}
                       </td>
                       <td className="py-3 pr-4 text-slate-600">
                         {p.baptism_date ? String(p.baptism_date).slice(0, 10) : '—'}
@@ -738,7 +1213,7 @@ export default function DirectorySection({ activeTenant }) {
                             onClick={() => startEdit(p)}
                             className="text-blue-700 font-medium hover:underline"
                           >
-                            Edit
+                            {isPcm ? (p.pcm_profile_id ? 'Edit / Enrich' : 'Enrich') : 'Edit'}
                           </button>
                         )}
                       </td>

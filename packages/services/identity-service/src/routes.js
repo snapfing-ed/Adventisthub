@@ -517,4 +517,42 @@ router.post('/admin/verification-codes', verifySession, requirePlatformAdmin, as
   }
 });
 
+
+// POST /api/auth/register-member — Standalone congregant/student account creation
+router.post('/auth/register-member', authLimiter, async (req, res) => {
+  const { fullName, email, password, phone } = req.body || {};
+  if (!fullName || !email || !password) {
+    return res.status(400).json({ error: 'fullName, email, and password are required' });
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  const normalizedEmail = String(email).trim().toLowerCase();
+  try {
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
+      const existing = await client.query('SELECT id FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
+      if (existing.rowCount > 0) {
+        const err = new Error('An account with this email already exists. Please sign in instead.');
+        err.status = 409;
+        throw err;
+      }
+      const ins = await client.query(
+        `INSERT INTO users (email, password_hash, full_name, phone)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, email, full_name, phone, is_platform_admin`,
+        [normalizedEmail, passwordHash, String(fullName).trim(), phone || null]
+      );
+      return ins.rows[0];
+    });
+    const token = signSessionToken(user);
+    setSessionCookie(res, token);
+    return res.status(201).json({ user, memberships: [] });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error('[auth/register-member] error:', err);
+    return res.status(500).json({ error: 'Member account creation failed' });
+  }
+});
+
 module.exports = router;

@@ -4,12 +4,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AuthProvider, useAuth } from '@/features/auth/AuthContext';
 import DirectorySection from '@/features/directory/DirectorySection';
+import OfficerClaimPanel from '@/features/portal/OfficerClaimPanel';
 import ClerkTransactionsSection from '@/features/clerk/ClerkTransactionsSection';
 import GovernanceSection from '@/features/governance/GovernanceSection';
+import PcmMentorshipSection from '@/features/pcm/PcmMentorshipSection';
+import TreasurySection from '@/features/treasury/TreasurySection';
 import ErrorBoundary from '@/app/ui/ErrorBoundary';
 import { apiFetch } from '@/lib/api';
 
-const VALID_TABS = ['directory', 'clerk', 'governance', 'officers'];
+const VALID_TABS = ['directory', 'clerk', 'governance', 'pcm', 'treasury', 'officers'];
 
 function AdminPortalContent() {
   const router = useRouter();
@@ -136,6 +139,26 @@ function AdminPortalContent() {
       ),
     },
     {
+      id: 'pcm',
+      label: isPcm ? 'PCM & Mentorship' : 'Campus Ministry (PCM)',
+      shortLabel: 'PCM',
+      icon: (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'treasury',
+      label: isPcm ? 'Chapter Treasury' : 'Treasury & Stewardship',
+      shortLabel: 'Treasury',
+      icon: (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    {
       id: 'officers',
       label: isPcm ? 'Chapter Access (RBAC)' : 'Portal Access (RBAC)',
       shortLabel: 'Access',
@@ -222,12 +245,12 @@ function AdminPortalContent() {
         </div>
 
         {activeTenant && (
-          <nav className="max-w-6xl mx-auto mt-3 pt-2.5 border-t border-slate-100 hidden md:flex items-center gap-1.5">
+          <nav className="max-w-6xl mx-auto mt-3 pt-2.5 border-t border-slate-100 hidden md:flex items-center gap-1.5 overflow-x-auto">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => navigateTab(item.id)}
-                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
                   activeTab === item.id
                     ? 'bg-blue-700 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
@@ -298,7 +321,10 @@ function AdminPortalContent() {
 
         {activeTenant && activeTab === 'directory' && (
           <ErrorBoundary>
-            <DirectorySection activeTenant={activeTenant} />
+            <div className="space-y-6">
+              <DirectorySection activeTenant={activeTenant} />
+              <OfficerClaimPanel activeTenant={activeTenant} />
+            </div>
           </ErrorBoundary>
         )}
 
@@ -311,6 +337,18 @@ function AdminPortalContent() {
         {activeTenant && activeTab === 'governance' && (
           <ErrorBoundary>
             <GovernanceSection activeTenant={activeTenant} />
+          </ErrorBoundary>
+        )}
+
+        {activeTenant && activeTab === 'pcm' && (
+          <ErrorBoundary>
+            <PcmMentorshipSection activeTenant={activeTenant} onNavigateTab={navigateTab} />
+          </ErrorBoundary>
+        )}
+
+        {activeTenant && activeTab === 'treasury' && (
+          <ErrorBoundary>
+            <TreasurySection activeTenant={activeTenant} />
           </ErrorBoundary>
         )}
 
@@ -408,12 +446,12 @@ function AdminPortalContent() {
       </main>
 
       {activeTenant && (
-        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-30 grid grid-cols-4">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-30 grid grid-cols-6">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => navigateTab(item.id)}
-              className={`flex flex-col items-center justify-center py-2 text-[11px] font-semibold ${
+              className={`flex flex-col items-center justify-center py-2 text-[10px] font-semibold ${
                 activeTab === item.id ? 'text-blue-700' : 'text-slate-500'
               }`}
             >

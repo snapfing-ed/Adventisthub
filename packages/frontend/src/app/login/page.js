@@ -30,7 +30,7 @@ export default function LoginPage() {
     if (res.data?.user?.is_platform_admin) {
       router.push('/platform-admin');
     } else {
-      router.push('/admin-portal');
+      router.push((res.data?.memberships?.length > 0 || res.data?.user?.is_platform_admin) ? '/admin-portal' : '/member-portal');
     }
   };
 
@@ -81,7 +81,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-slate-600 mt-6">
-          Registering a new church or PCM chapter?{' '}
+          Church member or student? <Link href="/signup" className="text-emerald-700 font-semibold hover:underline">Create personal account</Link><br />Registering a new church or PCM chapter?{' '}
           <Link href="/register" className="text-blue-700 font-medium hover:underline">
             Onboard organization
           </Link>

@@ -11,7 +11,10 @@ const SERVICES = {
   identity:   process.env.IDENTITY_SERVICE_URL   || 'http://127.0.0.1:5001',
   directory:  process.env.DIRECTORY_SERVICE_URL  || 'http://127.0.0.1:5002',
   clerk:      process.env.CLERK_SERVICE_URL      || 'http://127.0.0.1:5003',
-  governance: process.env.GOVERNANCE_SERVICE_URL || 'http://127.0.0.1:5004',
+  governance: process.env.GOVERNANCE_SERVICE_URL || 'http://127.0.0.1:5014',
+  treasury:   process.env.TREASURY_SERVICE_URL   || 'http://127.0.0.1:5006',
+  pcm:        process.env.PCM_SERVICE_URL        || 'http://127.0.0.1:5007',
+  portal:     process.env.PORTAL_SERVICE_URL     || 'http://127.0.0.1:5008',
 };
 
 const allowedOrigins = (process.env.CORS_ORIGIN || '')
@@ -57,6 +60,20 @@ function resolveTarget(pathname) {
     pathname.startsWith('/api/board-actions')
   ) {
     return { name: 'governance-service', url: SERVICES.governance };
+  }
+  if (
+    pathname.startsWith('/api/funds') ||
+    pathname.startsWith('/api/contributions') ||
+    pathname.startsWith('/api/remittances') ||
+    pathname.startsWith('/api/treasury')
+  ) {
+    return { name: 'treasury-service', url: SERVICES.treasury };
+  }
+  if (pathname.startsWith('/api/pcm')) {
+    return { name: 'pcm-service', url: SERVICES.pcm };
+  }
+  if (pathname.startsWith('/api/portal')) {
+    return { name: 'portal-service', url: SERVICES.portal };
   }
   return null;
 }

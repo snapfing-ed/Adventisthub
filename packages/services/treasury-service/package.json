@@ -1,0 +1,10 @@
+{
+  "name": "@adventisthub/treasury-service",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first node src/index.js",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first nodemon src/index.js"
+  },
+  "type": "commonjs"
+}
