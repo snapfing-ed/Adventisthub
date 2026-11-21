@@ -1,0 +1,31 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "sudo hwclock --hctosys 2>/dev/null; NODE_OPTIONS=--dns-result-order=ipv4first nodemon src/index.js",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first node src/index.js",
+    "bootstrap": "node --dns-result-order=ipv4first src/scripts/bootstrap.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^1.4.4-lts.1",
+    "nodemailer": "^8.0.10",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

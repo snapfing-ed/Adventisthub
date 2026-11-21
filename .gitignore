@@ -1,1 +1,14 @@
+node_modules/
+.env
+.env.local
+.env.production
+packages/backend/config/serviceAccount.json
+*.log
+:Zone.Identifier
+.DS_Storebackend/.env
+backend/.env
+packages/backend/.env
+packages/frontend/.env.local
+*.bak
 .next/
+dist/
