@@ -353,7 +353,7 @@ router.patch('/portal/me/contact', verifySession, async (req, res) => {
     const { phone, email, address, hostelOrResidence, emergencyContact, spiritualGifts } =
       req.body || {};
 
-    const updated = await withTenantTx({ tenantId }, async (client) => {
+    const updated = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
       const person = await resolveLinkedPerson(client, tenantId, req.user.id);
       if (!person) return null;
 
@@ -437,7 +437,7 @@ router.get('/portal/me/membership', verifySession, async (req, res) => {
       return res.status(400).json({ error: 'x-tenant-id header is required' });
     }
 
-    const payload = await withTenantTx({ tenantId }, async (client) => {
+    const payload = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
       const person = await resolveLinkedPerson(client, tenantId, req.user.id);
       if (!person) return null;
 
@@ -505,7 +505,7 @@ router.get('/portal/me/giving', verifySession, async (req, res) => {
 
     const year = req.query.year ? Number(req.query.year) : null;
 
-    const payload = await withTenantTx({ tenantId }, async (client) => {
+    const payload = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
       const person = await resolveLinkedPerson(client, tenantId, req.user.id);
       if (!person) return null;
 
@@ -606,7 +606,7 @@ router.get('/portal/me/pcm', verifySession, async (req, res) => {
       return res.status(400).json({ error: 'x-tenant-id header is required' });
     }
 
-    const payload = await withTenantTx({ tenantId }, async (client) => {
+    const payload = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
       const person = await resolveLinkedPerson(client, tenantId, req.user.id);
       if (!person) return null;
 
