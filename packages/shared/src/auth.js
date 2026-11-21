@@ -134,7 +134,72 @@ const requirePlatformAdmin = (req, res, next) => {
   return next();
 };
 
+
+const ROLE_CAPABILITIES = {
+  ADMIN: {
+    label: "Tenant Manager (Admin)",
+    directory: ["READ", "WRITE", "EXECUTE"],
+    clerk: ["READ", "WRITE", "EXECUTE"],
+    governance: ["READ", "WRITE", "EXECUTE"],
+    treasury: ["READ", "WRITE", "EXECUTE"],
+    pcm: ["READ", "WRITE", "EXECUTE"],
+    automations: ["READ", "WRITE", "EXECUTE"],
+    rbac: ["READ", "WRITE", "EXECUTE"],
+  },
+  PASTOR: {
+    label: "Pastor",
+    directory: ["READ", "WRITE"],
+    clerk: ["READ", "WRITE"],
+    governance: ["READ", "WRITE", "EXECUTE"],
+    treasury: ["READ"],
+    pcm: ["READ", "WRITE"],
+    automations: ["READ"],
+    rbac: ["READ"],
+  },
+  ELDER: {
+    label: "Elder",
+    directory: ["READ", "WRITE"],
+    clerk: ["READ", "WRITE"],
+    governance: ["READ", "WRITE"],
+    treasury: ["READ"],
+    pcm: ["READ", "WRITE"],
+    automations: ["READ"],
+    rbac: ["READ"],
+  },
+  CLERK: {
+    label: "Church / Chapter Clerk",
+    directory: ["READ", "WRITE", "EXECUTE"],
+    clerk: ["READ", "WRITE", "EXECUTE"],
+    governance: ["READ", "WRITE"],
+    treasury: [],
+    pcm: ["READ", "WRITE"],
+    automations: ["READ", "WRITE"],
+    rbac: ["READ"],
+  },
+  TREASURER: {
+    label: "Treasurer",
+    directory: ["READ"],
+    clerk: [],
+    governance: ["READ"],
+    treasury: ["READ", "WRITE", "EXECUTE"],
+    pcm: ["READ"],
+    automations: ["READ"],
+    rbac: ["READ"],
+  },
+  PCM_LEADER: {
+    label: "PCM Chapter Leader",
+    directory: ["READ", "WRITE"],
+    clerk: ["READ", "WRITE"],
+    governance: ["READ", "WRITE"],
+    treasury: ["READ"],
+    pcm: ["READ", "WRITE", "EXECUTE"],
+    automations: ["READ", "WRITE"],
+    rbac: ["READ"],
+  },
+};
+
 module.exports = {
+  ROLE_CAPABILITIES,
   signSessionToken,
   verifySession,
   requireTenantRole,

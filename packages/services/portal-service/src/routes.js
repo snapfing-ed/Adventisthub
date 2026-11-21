@@ -2,7 +2,6 @@
 const express = require('express');
 const crypto = require('crypto');
 const {
-  pool,
   withTenantTx,
   verifySession,
   requireTenantRole,
@@ -19,8 +18,8 @@ function generateInviteCode() {
   return 'AH-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
-// Helper: Resolve the authenticated user's linked person record inside a specific tenant
-async function resolveLinkedPerson(client, tenantId, userId) {
+// Resolves the authenticated user's linked person record (uses preferredTenantId when user has multiple profiles)
+async function resolveLinkedPerson(client, userId, preferredTenantId = null) {
   const { rows } = await client.query(
     `SELECT p.*,
             h.household_name,
@@ -35,82 +34,82 @@ async function resolveLinkedPerson(client, tenantId, userId) {
        FROM persons p
        JOIN tenants t ON t.id = p.tenant_id
        LEFT JOIN households h ON h.id = p.household_id
-      WHERE p.tenant_id = $1
-        AND p.user_id = $2
+      WHERE p.user_id = $1
+      ORDER BY CASE WHEN p.tenant_id::text = $2 THEN 0 ELSE 1 END, t.name ASC
       LIMIT 1`,
-    [tenantId, userId]
+    [userId, preferredTenantId || '']
   );
   return rows[0] || null;
 }
 
-// ── 1. GET /api/portal/me — Discover all linked profiles & pending claims for req.user ──
+// ── 1. GET /api/portal/me ──────────────────────────────────────────────────
 router.get('/portal/me', verifySession, async (req, res) => {
   try {
     const requestedTenantId = req.headers['x-tenant-id'] || req.query.tenantId || null;
 
-    // Cross-tenant lookup scoped strictly to req.user.id
-    const linkedProfiles = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      const { rows } = await client.query(
-        `SELECT p.id AS person_id,
-                p.tenant_id,
-                p.first_name,
-                p.last_name,
-                p.gender,
-                p.date_of_birth,
-                p.phone,
-                p.email,
-                p.address,
-                p.membership_status,
-                p.baptism_date,
-                p.baptizing_minister,
-                p.previous_church,
-                p.sabbath_school_class,
-                p.student_id,
-                p.institution,
-                p.program_of_study,
-                p.year_of_study,
-                p.hostel_or_residence,
-                p.home_church,
-                h.household_name,
-                t.name AS tenant_name,
-                t.slug AS tenant_slug,
-                t.organization_type,
-                t.city_or_campus,
-                t.region_or_conference,
-                t.verification_status
-           FROM persons p
-           JOIN tenants t ON t.id = p.tenant_id
-           LEFT JOIN households h ON h.id = p.household_id
-          WHERE p.user_id = $1
-          ORDER BY t.name ASC`,
-        [req.user.id]
-      );
-      return rows;
-    });
+    const { linkedProfiles, pendingClaims } = await withTenantTx(
+      { isPlatformAdmin: true },
+      async (client) => {
+        const profRes = await client.query(
+          `SELECT p.id AS person_id,
+                  p.tenant_id,
+                  p.first_name,
+                  p.last_name,
+                  p.gender,
+                  p.date_of_birth,
+                  p.phone,
+                  p.email,
+                  p.address,
+                  p.membership_status,
+                  p.baptism_date,
+                  p.baptizing_minister,
+                  p.previous_church,
+                  p.sabbath_school_class,
+                  p.student_id,
+                  p.institution,
+                  p.program_of_study,
+                  p.year_of_study,
+                  p.hostel_or_residence,
+                  p.home_church,
+                  h.household_name,
+                  t.name AS tenant_name,
+                  t.slug AS tenant_slug,
+                  t.organization_type,
+                  t.city_or_campus,
+                  t.region_or_conference,
+                  t.verification_status
+             FROM persons p
+             JOIN tenants t ON t.id = p.tenant_id
+             LEFT JOIN households h ON h.id = p.household_id
+            WHERE p.user_id = $1
+            ORDER BY t.name ASC`,
+          [req.user.id]
+        );
 
-    const pendingClaims = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      const { rows } = await client.query(
-        `SELECT r.id,
-                r.tenant_id,
-                r.person_id,
-                r.status,
-                r.verification_method,
-                r.review_notes,
-                r.created_at,
-                p.first_name,
-                p.last_name,
-                t.name AS tenant_name,
-                t.slug AS tenant_slug,
-                t.organization_type
-           FROM profile_claim_requests r
-           JOIN persons p ON p.id = r.person_id
-           JOIN tenants t ON t.id = r.tenant_id
-          WHERE r.user_id = $1
-          ORDER BY r.created_at DESC`,
-        [req.user.id]
-      );
-      return rows;
-    });
+        const claimRes = await client.query(
+          `SELECT r.id,
+                  r.tenant_id,
+                  r.person_id,
+                  r.status,
+                  r.verification_method,
+                  r.review_notes,
+                  r.created_at,
+                  p.first_name,
+                  p.last_name,
+                  t.name AS tenant_name,
+                  t.slug AS tenant_slug,
+                  t.organization_type
+             FROM profile_claim_requests r
+             JOIN persons p ON p.id = r.person_id
+             JOIN tenants t ON t.id = r.tenant_id
+            WHERE r.user_id = $1
+            ORDER BY r.created_at DESC`,
+          [req.user.id]
+        );
+
+        return { linkedProfiles: profRes.rows, pendingClaims: claimRes.rows };
+      }
+    );
 
     const activeProfile =
       linkedProfiles.find((p) => p.tenant_id === requestedTenantId) ||
@@ -130,7 +129,7 @@ router.get('/portal/me', verifySession, async (req, res) => {
   }
 });
 
-// ── 2. POST /api/portal/claim — Claim an unclaimed persons record safely ────
+// ── 2. POST /api/portal/claim ──────────────────────────────────────────────
 router.post('/portal/claim', verifySession, async (req, res) => {
   try {
     const { tenantSlug, inviteCode, identifier, firstName, lastName } = req.body || {};
@@ -147,7 +146,6 @@ router.post('/portal/claim', verifySession, async (req, res) => {
     }
 
     const result = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      // Path A: Instant verified claim via officer-issued invite code
       if (cleanCode) {
         const invRes = await client.query(
           `SELECT i.*, p.user_id AS existing_user_id, p.first_name, p.last_name, t.name AS tenant_name
@@ -169,13 +167,11 @@ router.post('/portal/claim', verifySession, async (req, res) => {
         }
 
         await client.query(
-          `UPDATE persons SET user_id = $1, updated_at = NOW() WHERE id = $2`,
-          [req.user.id, invite.person_id]
+          `UPDATE persons SET user_id = $1, email = COALESCE(email, $2), updated_at = NOW() WHERE id = $3`,
+          [req.user.id, req.user.email, invite.person_id]
         );
         await client.query(
-          `UPDATE profile_claim_invites
-              SET redeemed_by = $1, redeemed_at = NOW()
-            WHERE id = $2`,
+          `UPDATE profile_claim_invites SET redeemed_by = $1, redeemed_at = NOW() WHERE id = $2`,
           [req.user.id, invite.id]
         );
         await client.query(
@@ -202,9 +198,8 @@ router.post('/portal/claim', verifySession, async (req, res) => {
         };
       }
 
-      // Path B: Match against an unclaimed person record in the target tenant
       const tRes = await client.query(
-        `SELECT id, name, slug, organization_type FROM tenants WHERE slug = $1 LIMIT 1`,
+        `SELECT id, name, slug FROM tenants WHERE slug = $1 LIMIT 1`,
         [cleanSlug]
       );
       const tenant = tRes.rows[0];
@@ -212,7 +207,6 @@ router.post('/portal/claim', verifySession, async (req, res) => {
         return { status: 404, error: `No Church or PCM Chapter found with slug "${cleanSlug}".` };
       }
 
-      // Check if user already claimed a profile in this tenant
       const alreadyLinked = await client.query(
         `SELECT id, first_name, last_name FROM persons WHERE tenant_id = $1 AND user_id = $2 LIMIT 1`,
         [tenant.id, req.user.id]
@@ -225,11 +219,10 @@ router.post('/portal/claim', verifySession, async (req, res) => {
         };
       }
 
-      const normPhone = normalizePhone(cleanIdentifier);
+      const normPhone = normalizePhone(cleanIdentifier).replace(/[^0-9+]/g, '');
       const lowerEmail = cleanIdentifier.toLowerCase();
       const userEmail = String(req.user.email || '').toLowerCase();
 
-      // Look for exact unclaimed match by email or normalized phone
       const matchRes = await client.query(
         `SELECT id, first_name, last_name, email, phone
            FROM persons
@@ -240,14 +233,12 @@ router.post('/portal/claim', verifySession, async (req, res) => {
               OR ($4 <> '' AND REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9+]', '', 'g') = $4)
             )
           LIMIT 2`,
-        [tenant.id, lowerEmail, userEmail, normPhone.replace(/[^0-9+]/g, '')]
+        [tenant.id, lowerEmail, userEmail, normPhone]
       );
 
       if (matchRes.rows.length === 1) {
         const matched = matchRes.rows[0];
-        // Auto-link when email matches the verified authenticated user's email; otherwise queue for officer verification
-        const exactEmailMatch =
-          matched.email && matched.email.trim().toLowerCase() === userEmail;
+        const exactEmailMatch = matched.email && matched.email.trim().toLowerCase() === userEmail;
 
         if (exactEmailMatch) {
           await client.query(
@@ -260,16 +251,6 @@ router.post('/portal/claim', verifySession, async (req, res) => {
              VALUES ($1, $2, $3, 'EMAIL_OR_PHONE_MATCH', $4, 'VERIFIED', NOW())`,
             [tenant.id, req.user.id, matched.id, cleanIdentifier]
           );
-          await client.query(
-            `INSERT INTO audit_logs (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
-             VALUES ($1, $2, 'PORTAL_PROFILE_CLAIMED', 'persons', $3, $4::jsonb)`,
-            [
-              tenant.id,
-              req.user.id,
-              matched.id,
-              JSON.stringify({ method: 'EXACT_EMAIL_MATCH', email: userEmail }),
-            ]
-          );
           return {
             status: 200,
             claimed: true,
@@ -277,7 +258,6 @@ router.post('/portal/claim', verifySession, async (req, res) => {
           };
         }
 
-        // Phone match -> create PENDING verification request for Clerk/PCM Leader approval
         const reqIns = await client.query(
           `INSERT INTO profile_claim_requests
              (tenant_id, user_id, person_id, verification_method, submitted_identifier, status)
@@ -293,7 +273,6 @@ router.post('/portal/claim', verifySession, async (req, res) => {
         };
       }
 
-      // Fallback: Name match for manual officer approval
       const fName = String(firstName || '').trim();
       const lName = String(lastName || '').trim();
       if (fName && lName) {
@@ -327,14 +306,11 @@ router.post('/portal/claim', verifySession, async (req, res) => {
 
       return {
         status: 404,
-        error:
-          'No unclaimed directory record matched your email, phone, or name in that organization. Ask your Church Clerk or PCM Leader to add you or issue an Invite Claim Code.',
+        error: 'No unclaimed directory record matched your details. Ask your Church Clerk or PCM Leader for an Invite Claim Code.',
       };
     });
 
-    if (result.error) {
-      return res.status(result.status).json({ error: result.error });
-    }
+    if (result.error) return res.status(result.status).json({ error: result.error });
     res.status(result.status).json(result);
   } catch (err) {
     console.error('[portal-service] POST /portal/claim error:', err);
@@ -342,19 +318,15 @@ router.post('/portal/claim', verifySession, async (req, res) => {
   }
 });
 
-// ── 3. PATCH /api/portal/me/contact — Safe self-service contact field updates ──
+// ── 3. PATCH /api/portal/me/contact ────────────────────────────────────────
 router.patch('/portal/me/contact', verifySession, async (req, res) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] || req.body?.tenantId;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'x-tenant-id header is required' });
-    }
-
+    const preferredTenantId = req.headers['x-tenant-id'] || req.body?.tenantId || null;
     const { phone, email, address, hostelOrResidence, emergencyContact, spiritualGifts } =
       req.body || {};
 
     const updated = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      const person = await resolveLinkedPerson(client, tenantId, req.user.id);
+      const person = await resolveLinkedPerson(client, req.user.id, preferredTenantId);
       if (!person) return null;
 
       const nextPhone = phone !== undefined ? String(phone).trim() || null : person.phone;
@@ -372,12 +344,11 @@ router.patch('/portal/me/contact', verifySession, async (req, res) => {
                 address = $3,
                 hostel_or_residence = $4,
                 updated_at = NOW()
-          WHERE id = $5 AND tenant_id = $6 AND user_id = $7
+          WHERE id = $5 AND user_id = $6
           RETURNING *`,
-        [nextPhone, nextEmail, nextAddress, nextHostel, person.id, tenantId, req.user.id]
+        [nextPhone, nextEmail, nextAddress, nextHostel, person.id, req.user.id]
       );
 
-      // Update optional PCM profile self-service fields if profile exists
       if (emergencyContact !== undefined || spiritualGifts !== undefined) {
         await client.query(
           `UPDATE pcm_profiles
@@ -388,7 +359,7 @@ router.patch('/portal/me/contact', verifySession, async (req, res) => {
           [
             emergencyContact !== undefined ? String(emergencyContact).trim() || null : null,
             spiritualGifts !== undefined ? String(spiritualGifts).trim() || null : null,
-            tenantId,
+            person.tenant_id,
             person.id,
           ]
         );
@@ -399,27 +370,25 @@ router.patch('/portal/me/contact', verifySession, async (req, res) => {
         email: nextEmail,
         address: nextAddress,
         hostel_or_residence: nextHostel,
-        ...(emergencyContact !== undefined ? { emergency_contact: emergencyContact } : {}),
-        ...(spiritualGifts !== undefined ? { spiritual_gifts: spiritualGifts } : {}),
       };
 
       await client.query(
         `INSERT INTO member_contact_update_logs (tenant_id, person_id, user_id, changed_fields)
          VALUES ($1, $2, $3, $4::jsonb)`,
-        [tenantId, person.id, req.user.id, JSON.stringify(diff)]
+        [person.tenant_id, person.id, req.user.id, JSON.stringify(diff)]
       );
 
       await client.query(
         `INSERT INTO audit_logs (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, $2, 'MEMBER_SELF_CONTACT_UPDATED', 'persons', $3, $4::jsonb)`,
-        [tenantId, req.user.id, person.id, JSON.stringify(diff)]
+        [person.tenant_id, req.user.id, person.id, JSON.stringify(diff)]
       );
 
       return rows[0];
     });
 
     if (!updated) {
-      return res.status(403).json({ error: 'No linked member profile found for your account in this organization.' });
+      return res.status(404).json({ error: 'No linked member profile found for your account.' });
     }
 
     res.json({ profile: updated, message: 'Contact details updated.' });
@@ -429,16 +398,13 @@ router.patch('/portal/me/contact', verifySession, async (req, res) => {
   }
 });
 
-// ── 4. GET /api/portal/me/membership — Read-only status, transfers & officer roles ──
+// ── 4. GET /api/portal/me/membership ───────────────────────────────────────
 router.get('/portal/me/membership', verifySession, async (req, res) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] || req.query.tenantId;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'x-tenant-id header is required' });
-    }
+    const preferredTenantId = req.headers['x-tenant-id'] || req.query.tenantId || null;
 
     const payload = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      const person = await resolveLinkedPerson(client, tenantId, req.user.id);
+      const person = await resolveLinkedPerson(client, req.user.id, preferredTenantId);
       if (!person) return null;
 
       const txRes = await client.query(
@@ -459,35 +425,29 @@ router.get('/portal/me/membership', verifySession, async (req, res) => {
            FROM membership_transactions
           WHERE tenant_id = $1 AND person_id = $2
           ORDER BY effective_date DESC, created_at DESC`,
-        [tenantId, person.id]
+        [person.tenant_id, person.id]
       );
 
       const officersRes = await client.query(
         `SELECT o.id,
-                o.role_title,
+                o.office_title AS role_title,
                 o.department,
                 o.status,
-                o.start_date,
-                o.end_date,
+                o.elected_date AS start_date,
                 sy.label AS service_year_label
            FROM officers o
            LEFT JOIN service_years sy ON sy.id = o.service_year_id
           WHERE o.tenant_id = $1 AND o.person_id = $2
-          ORDER BY o.start_date DESC NULLS LAST, o.created_at DESC`,
-        [tenantId, person.id]
+          ORDER BY o.created_at DESC`,
+        [person.tenant_id, person.id]
       );
 
-      return {
-        person,
-        transactions: txRes.rows,
-        officers: officersRes.rows,
-      };
+      return { person, transactions: txRes.rows, officers: officersRes.rows };
     });
 
     if (!payload) {
-      return res.status(403).json({ error: 'No linked member profile found in this organization.' });
+      return res.status(404).json({ error: 'No linked member profile found.' });
     }
-
     res.json(payload);
   } catch (err) {
     console.error('[portal-service] GET /portal/me/membership error:', err);
@@ -495,21 +455,17 @@ router.get('/portal/me/membership', verifySession, async (req, res) => {
   }
 });
 
-// ── 5. GET /api/portal/me/giving — Personal POSTED stewardship receipts & statement ──
+// ── 5. GET /api/portal/me/giving ───────────────────────────────────────────
 router.get('/portal/me/giving', verifySession, async (req, res) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] || req.query.tenantId;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'x-tenant-id header is required' });
-    }
-
+    const preferredTenantId = req.headers['x-tenant-id'] || req.query.tenantId || null;
     const year = req.query.year ? Number(req.query.year) : null;
 
     const payload = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      const person = await resolveLinkedPerson(client, tenantId, req.user.id);
+      const person = await resolveLinkedPerson(client, req.user.id, preferredTenantId);
       if (!person) return null;
 
-      const params = [tenantId, person.id];
+      const params = [person.tenant_id, person.id];
       let yearFilter = '';
       if (year && Number.isInteger(year)) {
         params.push(year);
@@ -578,8 +534,6 @@ router.get('/portal/me/giving', verifySession, async (req, res) => {
           address: person.address,
           tenant_name: person.tenant_name,
           organization_type: person.organization_type,
-          city_or_campus: person.city_or_campus,
-          region_or_conference: person.region_or_conference,
         },
         year: year || 'ALL',
         contributions: contribRes.rows,
@@ -588,9 +542,8 @@ router.get('/portal/me/giving', verifySession, async (req, res) => {
     });
 
     if (!payload) {
-      return res.status(403).json({ error: 'No linked member profile found in this organization.' });
+      return res.status(404).json({ error: 'No linked member profile found.' });
     }
-
     res.json(payload);
   } catch (err) {
     console.error('[portal-service] GET /portal/me/giving error:', err);
@@ -598,21 +551,18 @@ router.get('/portal/me/giving', verifySession, async (req, res) => {
   }
 });
 
-// ── 6. GET /api/portal/me/pcm — Personal PCM profile, fellowship groups & mentorship ──
+// ── 6. GET /api/portal/me/pcm ──────────────────────────────────────────────
 router.get('/portal/me/pcm', verifySession, async (req, res) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] || req.query.tenantId;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'x-tenant-id header is required' });
-    }
+    const preferredTenantId = req.headers['x-tenant-id'] || req.query.tenantId || null;
 
     const payload = await withTenantTx({ isPlatformAdmin: true }, async (client) => {
-      const person = await resolveLinkedPerson(client, tenantId, req.user.id);
+      const person = await resolveLinkedPerson(client, req.user.id, preferredTenantId);
       if (!person) return null;
 
       const profRes = await client.query(
         `SELECT * FROM pcm_profiles WHERE tenant_id = $1 AND person_id = $2 LIMIT 1`,
-        [tenantId, person.id]
+        [person.tenant_id, person.id]
       );
 
       const groupsRes = await client.query(
@@ -634,7 +584,7 @@ router.get('/portal/me/pcm', verifySession, async (req, res) => {
             AND gm.person_id = $2
             AND gm.is_active = TRUE
           ORDER BY g.name ASC`,
-        [tenantId, person.id]
+        [person.tenant_id, person.id]
       );
 
       const pairsRes = await client.query(
@@ -661,7 +611,7 @@ router.get('/portal/me/pcm', verifySession, async (req, res) => {
           WHERE mp.tenant_id = $1
             AND (mp.mentor_person_id = $2 OR mp.mentee_person_id = $2)
           ORDER BY mp.started_at DESC`,
-        [tenantId, person.id]
+        [person.tenant_id, person.id]
       );
 
       return {
@@ -675,9 +625,8 @@ router.get('/portal/me/pcm', verifySession, async (req, res) => {
     });
 
     if (!payload) {
-      return res.status(403).json({ error: 'No linked member profile found in this organization.' });
+      return res.status(404).json({ error: 'No linked member profile found.' });
     }
-
     res.json(payload);
   } catch (err) {
     console.error('[portal-service] GET /portal/me/pcm error:', err);
